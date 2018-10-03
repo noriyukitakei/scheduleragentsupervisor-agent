@@ -22,55 +22,64 @@ public class O365Agent {
 
 	public static void main(String[] args)
 			throws InvalidKeyException, URISyntaxException, StorageException, InterruptedException, JsonParseException, JsonMappingException, IOException {
-		// Retrieve storage account from connection-string.
+		
+		// 環境変数からAzure Queue Storageへの接続情報を取得する。
 		CloudStorageAccount storageAccount = CloudStorageAccount.parse(storageConnectionString);
 
-		// Create the queue client.
+		// キューのクライアントを作成する。
 		CloudQueueClient queueClient = storageAccount.createCloudQueueClient();
 
-		// Retrieve a reference to a queue.
+		// o365-requestキューへの参照情報を取得する。
 		CloudQueue requestQueue = queueClient.getQueueReference("o365-request");
 
+		// o365-responseキューへの参照情報を取得する。
 		CloudQueue responseQueue = queueClient.getQueueReference("o365-response");
 
 		while (true) {
-
+			// o365-requestキューからメッセージを取得する。
 			CloudQueueMessage retrievedMessage = requestQueue.retrieveMessage();
 			if (retrievedMessage != null) {
+				
+				// o365-requestキューのメッセージを取得する。
 				String requestJSONString = retrievedMessage.getMessageContentAsString();
 
+				// o365-requestキューをオブジェクトに変換する。
 				ObjectMapper mapper = new ObjectMapper();
 				RequestJSON requestJSON = mapper.readValue(requestJSONString, RequestJSON.class);
 
+				// o365-responseキューへ格納するメッセージのオブジェクトを作成する。
 				ResponseJSON responseJSON = new ResponseJSON();
 				responseJSON.setTaskId(requestJSON.getTaskId());
 				responseJSON.setUserId(requestJSON.getUserId());
 
 				try {
+					// デキューが5回以上したら、そのキューを削除する。
 					if (retrievedMessage.getDequeueCount() >= 5) {
-						System.out.println("デキュー5回以上");
 						requestQueue.deleteMessage(retrievedMessage);
 					}
 					System.out.println(retrievedMessage.getMessageContentAsString());
 
-					// Office365へのアカウント追加処理
+					// Office365へのアカウント追加処理(今回は省略しています)
 					Thread.sleep(1000);
-					String hoge = null;
-					System.out.println(hoge.length());
 
-					// 処理成功
+					// 処理成功なので、o365-responseキューへ格納するメッセージの処理結果を
+					// 成功として返す。
 					responseJSON.setProcessState("02");
 
+					// o365-responseにキューを配信する。
 					String processingJSONString = mapper.writeValueAsString(responseJSON);
 
 					CloudQueueMessage processingMessage = new CloudQueueMessage(processingJSONString);
 					responseQueue.addMessage(processingMessage);
 
 				} catch (Exception e) {
-					// 処理失敗
+
 					e.printStackTrace();
+					// 処理失敗なので、o365-responseキューへ格納するメッセージの処理結果を
+					// 失敗として返す。
 					responseJSON.setProcessState("03");
 
+					// o365-responseにキューを配信する。
 					String processedJSONString = mapper.writeValueAsString(responseJSON);
 
 					CloudQueueMessage processedMessage = new CloudQueueMessage(processedJSONString);
